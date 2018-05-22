@@ -1,4 +1,5 @@
 import scipy.interpolate
+import scipy.optimize
 import numpy
 import sys
 import os
@@ -16,7 +17,7 @@ def linear_fmin(func,start,end,step):
         print("i=",i,"func=",val,flush=True) 
     return xmin
 
-def lockin(bsFile, oppsFile, mkidFile,dt = 0.1, mkidDefaultShift = 0, BSFreq = 10.0, DAQFreq = 80000.0, FPSFreq = 64.0, BSSE_TimeSpanRate = 10, mkidShiftErr = 3.0,mkidShiftStep = 0.005, ConvolStep = 0.02):
+def lockin(bsFile, oppsFile, mkidFile,dt = 0.1, mkidDefaultShift = 2.1, BSFreq = 10.0, DAQFreq = 80000.0, FPSFreq = 64.0, BSSE_TimeSpanRate = 10, mkidShiftErr = 0.2,mkidShiftStep = 0.001, ConvolStep = 0.02):
     bsArr = numpy.loadtxt(bsFile)
     oppsArr = numpy.loadtxt(oppsFile)
     mkidArr = numpy.loadtxt(mkidFile)
@@ -96,9 +97,9 @@ def lockin(bsFile, oppsFile, mkidFile,dt = 0.1, mkidDefaultShift = 0, BSFreq = 1
             sumS = sumS + interp_mkid(x - A)*interp_BS(x) * ConvolStep
         return sumS
     mkidShift = linear_fmin(S,mkidDefaultShift,mkidDefaultShift+mkidShiftErr,mkidShiftStep)
-    #mkidShift = scipy.optimize.fmin(S,mkidDefaultShift)
-    print("Mkid shift time is:",mkidShift)
-    mkidArr = mkidArr + [mkidShift,0]
+    mkidShift_calib = scipy.optimize.fmin(S,mkidShift)
+    print("Mkid shift time is:",mkidShift_calib)
+    mkidArr = mkidArr + [mkidShift_calib[0],0]
     with open(mkidFile + ".calib","wb") as ofs:
         numpy.savetxt(ofs,mkidArr)
     print("Output calibrated mkid data done!")
