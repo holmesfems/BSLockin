@@ -98,7 +98,7 @@ def lockin(bsFile, oppsFile, mkidFile,dt = 0.1, mkidDefaultShift = 0, BSFreq = 1
     mkidShift = linear_fmin(S,mkidDefaultShift,mkidDefaultShift+mkidShiftErr,mkidShiftStep)
     #mkidShift = scipy.optimize.fmin(S,mkidDefaultShift)
     print("Mkid shift time is:",mkidShift)
-    mkidArr = mkidArr + [mkidShift[0],0]
+    mkidArr = mkidArr + [mkidShift,0]
     with open(mkidFile + ".calib","wb") as ofs:
         numpy.savetxt(ofs,mkidArr)
     print("Output calibrated mkid data done!")
