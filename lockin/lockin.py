@@ -1,5 +1,7 @@
 import scipy.interpolate
 import scipy.optimize
+import scipy.integrate
+import scipy.signal
 import numpy
 import sys
 import os
@@ -17,9 +19,10 @@ FPSFreq = 64.0
 BSSE_TimeSpanRate = 10
 LSE_TimeSpanRate = 0.55
 mkidShiftErr = 0.5
-mkidShiftStep = 0.002
+mkidShiftStep = 0.001
 ConvolStep = 0.02
 MaskRate = 0.025
+mkidForceCount = 10
 
 #Shared Memories
 bs_start = 0.0
@@ -139,33 +142,50 @@ def lockinBS(bsFile, oppsFile):
     max_iter = math.floor((lockin_end - lockin_start) / lockin_dt + 0.5)
     return (bsArr_new,scipy.interpolate.interp1d(bsArr_new[:,0],bsArr_new[:,1]))
 
-def lockin(bsArr,interp_BS, mkidFile):
+def lockin(bsArr,interp_BS, mkidFile, force = False):
     print("Lockin File:",mkidFile)
-    if os.path.exists(mkidFile + ".calib"):
-        print("Calib file detected!")
-        with open(mkidFile + ".calib") as ifs:
-            #firstline = ifs.readline()
-            #print(firstline)
-            return numpy.fromstring(ifs.readline(),sep=' ')[0]
+    if not force:
+        if os.path.exists(mkidFile + ".calib"):
+            print("Calib file detected!")
+            with open(mkidFile + ".calib") as ifs:
+                #firstline = ifs.readline()
+                #print(firstline)
+                return numpy.fromstring(ifs.readline(),sep=' ')[0]
     mkidArr = numpy.loadtxt(mkidFile)
     mkidArr = numpy.vstack((mkidArr[:,0],mkidArr[:,2])).T
     #Get calibrated mkid shift
     mkidArr = mkidArr * [1.0/FPSFreq,1.0]
-    interp_mkid = scipy.interpolate.interp1d(mkidArr[:,0],mkidArr[:,1])
     #print("start,end step=",bs_start,bs_end,ConvolStep)
-    def S(A):
-        sumS = 0.0
-        for x in numpy.arange(bs_start,bs_end,ConvolStep):
-            sumS = sumS + interp_mkid(x - A)*interp_BS(x) * ConvolStep
-        return sumS
-    mkidShift = linear_fmin(S,mkidDefaultShift,mkidDefaultShift+mkidShiftErr,mkidShiftStep)
-    print("Calibrating minimum point by N-M method",flush=True)
-    mkidShift_calib = scipy.optimize.fmin(S,mkidShift)
-    print("Mkid shift time is:",mkidShift_calib)
-    mkidArr = mkidArr + [mkidShift_calib[0],0]
+    mkidArr_mean0 = mkidArr- [0,numpy.mean(mkidArr[:,1])]
+    interp_mkid_mean0 = scipy.interpolate.interp1d(mkidArr_mean0[:,0],mkidArr_mean0[:,1])
+    #def S(A):
+        
+        #correlate:
+        #def F(x):
+        #    return interp_mkid(x-A) * interp_BS(x)
+        #i1 = scipy.integrate.quad(F,bs_start,bs_end)
+        #return i1
+    #mkidShift = linear_fmin(S,mkidDefaultShift,mkidDefaultShift+mkidShiftErr,mkidShiftStep)
+    #print("Calibrating minimum point by N-M method",flush=True)
+    #mkidShift_calib = scipy.optimize.fmin(S,mkidShift)
+    #print("Mkid shift time is:",mkidShift_calib)
+
+    #New correlate method:
+    xpoints_mkid = numpy.arange(bs_start-mkidShiftErr-mkidDefaultShift,bs_end-mkidDefaultShift,mkidShiftStep)
+    xpoints_BS = numpy.arange(bs_start,bs_end,mkidShiftStep)
+    corr1 = list(map(interp_mkid_mean0,xpoints_mkid))
+    corr2 = list(map(lambda x: -interp_BS(x) + 0.5,xpoints_BS))
+    
+    corrArr = scipy.signal.correlate(corr2,corr1,mode = 'valid')
+    with open(mkid_file+".corr","wb") as ofs:
+        numpy.savetxt(ofs,numpy.vstack((list(map(lambda i:mkidDefaultShift+mkidShiftStep*i,range(0,len(corrArr)))),corrArr)).T)
+    mkidShift = corrArr.argmax()* mkidShiftStep + mkidDefaultShift
+     
+    mkidArr = mkidArr + [mkidShift,0]
     with open(mkidFile + ".calib","wb") as ofs:
         numpy.savetxt(ofs,mkidArr)
     print("Output calibrated mkid data done!")
+    print("Mkid shift = ",mkidShift)
     #Lock in
     
     iter = 1
@@ -199,26 +219,30 @@ def lockin(bsArr,interp_BS, mkidFile):
                 return
     with open(mkidFile+".lockin","wb") as ofs:
         numpy.savetxt(ofs,numpy.array(lockin_Arr))
-    print("Output lockin data done!")
+    print("Output lockin data done!",flush=True)
 
-    return mkidShift_calib[0]
+    return mkidShift
 
 if not len(sys.argv) < 4:
     bsArr,interp_BS = lockinBS(sys.argv[1],sys.argv[2])
     shiftlist = []
     startTime = time.time()
+    mkid_file_count = len(sys.argv[3:])
+    force = False
+    if mkid_file_count <= mkidForceCount:
+        force = True
     for mkid_file in sys.argv[3:]:
         mkidNoRe = re.compile("MKID(?P<No>\d\d\d)")
         mkidNoMatch = mkidNoRe.search(mkid_file)
         mkidNo = int(mkidNoMatch.group('No'))
         print("MKID No:",mkidNo)
-        shift = lockin(bsArr,interp_BS,mkid_file)
+        shift = lockin(bsArr,interp_BS,mkid_file,force)
         print("Shift = ",shift)
-        shiftlist.append([mkidNo,shift])
+        shiftlist.append([float(mkidNo),shift])
     shiftArr = numpy.array(shiftlist)
     #shiftArr.sort(0)
-    if len(sys.argv[3:]) > 10:
+    if not force:
         with open("shiftlist.txt","wb") as ofs:
-            numpy.savetxt(ofs,shiftArr)
+            numpy.savetxt(ofs,shiftArr[shiftArr[:,0].argsort(),:])
         print("Shift list has generated!")
         print("Total used time is {0:d} seconds".format(int(time.time()-startTime)))
