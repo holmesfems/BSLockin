@@ -5,6 +5,7 @@ import sys
 import os
 import re
 import datetime
+import math
 
 def linear_fmin(func,start,end,step):
     min = func(start)
@@ -17,7 +18,29 @@ def linear_fmin(func,start,end,step):
         print("i=",i,"func=",val,flush=True) 
     return xmin
 
-def lockin(bsFile, oppsFile, mkidFile,dt = 0.1, mkidDefaultShift = 2.1, BSFreq = 10.0, DAQFreq = 80000.0, FPSFreq = 64.0, BSSE_TimeSpanRate = 10, mkidShiftErr = 0.2,mkidShiftStep = 0.001, ConvolStep = 0.02):
+def findSE(arr2d,freq,timeSpanRate):
+    start = -1.0;
+    for i in range(0,len(arr2d)):
+        if(arr2d[i][1] == arr2d[i+1][1]) and (-arr2d[i][0] + arr2d[i+1][0]) * freq < timeSpanRate:
+            start = arr2d[i][0]
+            break
+    end = -1.0
+    for i in range(0,len(arr2d)):
+        i = len(arr2d) - i - 2
+        if(arr2d[i][1] == arr2d[i+1][1]) and (-arr2d[i][0] + arr2d[i+1][0]) * freq < timeSpanRate:
+            end = arr2d[i+1][0]
+            break
+    return (start,end)
+
+def isInMask(point, bsArr, bsFreq, MaskRate):
+    if len([x for x in bsArr if abs(point - x[0]) * bsFreq < MaskRate]) == 0:
+        return False
+    return True
+
+def lockin(bsFile, oppsFile, mkidFile, lockin_dt = 0.25, mkidDefaultShift = 2.1, BSFreq = 10.0, \
+   DAQFreq = 80000.0, FPSFreq = 64.0, BSSE_TimeSpanRate = 10, LSE_TimeSpanRate = 0.55,\
+   mkidShiftErr = 0.2,mkidShiftStep = 0.001, ConvolStep = 0.02, MaskRate = 0.025):
+
     bsArr = numpy.loadtxt(bsFile)
     oppsArr = numpy.loadtxt(oppsFile)
     mkidArr = numpy.loadtxt(mkidFile)
@@ -69,17 +92,7 @@ def lockin(bsFile, oppsFile, mkidFile,dt = 0.1, mkidDefaultShift = 2.1, BSFreq =
     print("Output calibrated beamswitch signal done!")
 
     #Get time that BS starts
-    bs_start = -1.0;
-    for i in range(0,len(bsArr_new)):
-        if(bsArr_new[i][1] == bsArr_new[i+1][1]) and (-bsArr_new[i][0] + bsArr_new[i+1][0]) * BSFreq < BSSE_TimeSpanRate:
-            bs_start = bsArr_new[i][0]
-            break
-    bs_end = -1.0
-    for i in range(0,len(bsArr_new)):
-        i = len(bsArr_new) - i - 2
-        if(bsArr_new[i][1] == bsArr_new[i+1][1]) and (-bsArr_new[i][0] + bsArr_new[i+1][0]) * BSFreq < BSSE_TimeSpanRate:
-            bs_end = bsArr_new[i][0]
-            break
+    bs_start,bs_end = findSE(bsArr_new, BSFreq, BSSE_TimeSpanRate)
     if bs_end > bs_start:
         print("Found BS start point and end point")
         print("BS_Start = ", bs_start)
@@ -103,6 +116,44 @@ def lockin(bsFile, oppsFile, mkidFile,dt = 0.1, mkidDefaultShift = 2.1, BSFreq =
     with open(mkidFile + ".calib","wb") as ofs:
         numpy.savetxt(ofs,mkidArr)
     print("Output calibrated mkid data done!")
+    #Lock in
+    lockin_start,lockin_end = findSE(bsArr_new, BSFreq, LSE_TimeSpanRate)
+    lockin_start = math.ceil(lockin_start / lockin_dt) * lockin_dt
+    lockin_end = math.floor(lockin_end / lockin_dt) * lockin_dt
+    max_iter = math.floor((lockin_end - lockin_start) / lockin_dt + 0.5)
+    iter = 1
+    sum_ON = 0.0
+    num_ON = 0
+    sum_OFF = 0.0
+    num_OFF = 0.0
+    lockin_Arr = []
+    for point in filter(lambda x:x[0] >= lockin_start, mkidArr):
+        if point[0] < lockin_start + iter * lockin_dt:
+            if isInMask(point[0], bsArr_new, BSFreq, MaskRate):
+                continue
+            if interp_BS(point[0]) > 0.5:
+                #ON
+                sum_ON = sum_ON + point[1]
+                num_ON = num_ON + 1
+            else:
+                #OFF
+                sum_OFF = sum_OFF + point[1]
+                num_OFF = num_OFF + 1
+        else:
+            if num_ON > 0 and num_OFF > 0:
+                lockin_Arr.append([lockin_start + (iter - 0.5) * lockin_dt, - sum_ON/num_ON + sum_OFF/num_OFF])
+                sum_ON,sum_OFF = 0.0, 0.0
+                num_ON,num_OFF = 0, 0
+                iter = iter + 1
+                if(iter > max_iter):
+                    break
+            else:
+                print("Illigal data has occured!")
+                return
+    with open(mkidFile+".lockin","wb") as ofs:
+        numpy.savetxt(ofs,numpy.array(lockin_Arr))
+    print("Output lockin data done!")
+
     return 0
 
 if not len(sys.argv) < 4:
