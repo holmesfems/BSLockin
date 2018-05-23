@@ -6,16 +6,18 @@ import os
 import re
 import datetime
 import math
+import progbar
+import time
 #Params
 lockin_dt = 0.25
-mkidDefaultShift = 2.1
+mkidDefaultShift = 2.0
 BSFreq = 10.0
 DAQFreq = 80000.0
 FPSFreq = 64.0
 BSSE_TimeSpanRate = 10
 LSE_TimeSpanRate = 0.55
-mkidShiftErr = 0.2
-mkidShiftStep = 0.001
+mkidShiftErr = 0.5
+mkidShiftStep = 0.002
 ConvolStep = 0.02
 MaskRate = 0.025
 
@@ -29,12 +31,23 @@ max_iter = 0
 def linear_fmin(func,start,end,step):
     min = func(start)
     xmin = start
-    for i in numpy.arange(start,end,step):
-        val = func(i)
-        if min > val:
-            min = val
-            xmin = i
-        print("i=",i,"func=",val,flush=True) 
+    points = numpy.arange(start,end,step)
+    lenth = len(points)
+    div = lenth*1.0 / 100
+    nowProg = 0
+    print("Start seeking minimum value of function by linear sweeping..")
+    print("Start = {0:.4e}, End = {1:.4e}, Step = {2:.4e}".format(start,end,step))
+    with progbar.progbar(lenth) as pb:
+        for i in range(pb.period()):
+            val = func(points[i])
+            if min > val:
+                min = val
+                xmin = points[i]
+            prog = math.floor(i/div)
+            if prog > nowProg:
+                nowProg = prog;
+                pb.update(i)
+    print("Result = ", xmin)
     return xmin
 
 def findSE(arr2d,freq,timeSpanRate):
@@ -127,18 +140,26 @@ def lockinBS(bsFile, oppsFile):
     return (bsArr_new,scipy.interpolate.interp1d(bsArr_new[:,0],bsArr_new[:,1]))
 
 def lockin(bsArr,interp_BS, mkidFile):
+    print("Lockin File:",mkidFile)
+    if os.path.exists(mkidFile + ".calib"):
+        print("Calib file detected!")
+        with open(mkidFile + ".calib") as ifs:
+            #firstline = ifs.readline()
+            #print(firstline)
+            return numpy.fromstring(ifs.readline(),sep=' ')[0]
     mkidArr = numpy.loadtxt(mkidFile)
     mkidArr = numpy.vstack((mkidArr[:,0],mkidArr[:,2])).T
     #Get calibrated mkid shift
     mkidArr = mkidArr * [1.0/FPSFreq,1.0]
     interp_mkid = scipy.interpolate.interp1d(mkidArr[:,0],mkidArr[:,1])
-    print("start,end step=",bs_start,bs_end,ConvolStep)
+    #print("start,end step=",bs_start,bs_end,ConvolStep)
     def S(A):
         sumS = 0.0
         for x in numpy.arange(bs_start,bs_end,ConvolStep):
             sumS = sumS + interp_mkid(x - A)*interp_BS(x) * ConvolStep
         return sumS
     mkidShift = linear_fmin(S,mkidDefaultShift,mkidDefaultShift+mkidShiftErr,mkidShiftStep)
+    print("Calibrating minimum point by N-M method",flush=True)
     mkidShift_calib = scipy.optimize.fmin(S,mkidShift)
     print("Mkid shift time is:",mkidShift_calib)
     mkidArr = mkidArr + [mkidShift_calib[0],0]
@@ -184,5 +205,20 @@ def lockin(bsArr,interp_BS, mkidFile):
 
 if not len(sys.argv) < 4:
     bsArr,interp_BS = lockinBS(sys.argv[1],sys.argv[2])
+    shiftlist = []
+    startTime = time.time()
     for mkid_file in sys.argv[3:]:
-        lockin(bsArr,interp_BS,mkid_file)
+        mkidNoRe = re.compile("MKID(?P<No>\d\d\d)")
+        mkidNoMatch = mkidNoRe.search(mkid_file)
+        mkidNo = int(mkidNoMatch.group('No'))
+        print("MKID No:",mkidNo)
+        shift = lockin(bsArr,interp_BS,mkid_file)
+        print("Shift = ",shift)
+        shiftlist.append([mkidNo,shift])
+    shiftArr = numpy.array(shiftlist)
+    #shiftArr.sort(0)
+    if len(sys.argv[3:]) > 10:
+        with open("shiftlist.txt","wb") as ofs:
+            numpy.savetxt(ofs,shiftArr)
+        print("Shift list has generated!")
+        print("Total used time is {0:d} seconds".format(int(time.time()-startTime)))
