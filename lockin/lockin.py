@@ -23,7 +23,7 @@ mkidShiftStep = 0.001
 ConvolStep = 0.02
 MaskRate = 0.025
 mkidForceCount = 10
-
+rejectRate = 2
 #Shared Memories
 bs_start = 0.0
 bs_end = 0.0
@@ -245,4 +245,11 @@ if not len(sys.argv) < 4:
         with open("shiftlist.txt","wb") as ofs:
             numpy.savetxt(ofs,shiftArr[shiftArr[:,0].argsort(),:])
         print("Shift list has generated!")
+        m = numpy.mean(shiftArr[:,1])
+        s = numpy.std(shiftArr[:,1])
+        shiftArr_rejected = [x for x in shiftArr if abs(x[1] - m) >= s*rejectRate]
+        if len(shiftArr_rejected) > 0:
+            with open("rejectlist.txt","wb") as ofs:
+                numpy.savetxt(ofs,shiftArr_rejected)
+            print("{0:d} points are illegal!".format(len(shiftArr_rejected)))
         print("Total used time is {0:d} seconds".format(int(time.time()-startTime)))
