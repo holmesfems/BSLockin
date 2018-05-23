@@ -6,6 +6,25 @@ import os
 import re
 import datetime
 import math
+#Params
+lockin_dt = 0.25
+mkidDefaultShift = 2.1
+BSFreq = 10.0
+DAQFreq = 80000.0
+FPSFreq = 64.0
+BSSE_TimeSpanRate = 10
+LSE_TimeSpanRate = 0.55
+mkidShiftErr = 0.2
+mkidShiftStep = 0.001
+ConvolStep = 0.02
+MaskRate = 0.025
+
+#Shared Memories
+bs_start = 0.0
+bs_end = 0.0
+lockin_start = 0.0
+lockin_end = 0.0
+max_iter = 0
 
 def linear_fmin(func,start,end,step):
     min = func(start)
@@ -37,14 +56,15 @@ def isInMask(point, bsArr, bsFreq, MaskRate):
         return False
     return True
 
-def lockin(bsFile, oppsFile, mkidFile, lockin_dt = 0.25, mkidDefaultShift = 2.1, BSFreq = 10.0, \
-   DAQFreq = 80000.0, FPSFreq = 64.0, BSSE_TimeSpanRate = 10, LSE_TimeSpanRate = 0.55,\
-   mkidShiftErr = 0.2,mkidShiftStep = 0.001, ConvolStep = 0.02, MaskRate = 0.025):
-
+def lockinBS(bsFile, oppsFile):
+    global bs_start
+    global bs_end
+    global lockin_start
+    global lockin_end
+    global max_iter
     bsArr = numpy.loadtxt(bsFile)
     oppsArr = numpy.loadtxt(oppsFile)
-    mkidArr = numpy.loadtxt(mkidFile)
-    mkidArr = numpy.vstack((mkidArr[:,0],mkidArr[:,2])).T
+    
     #Calculate calibrated DAQ Sampling Frequency
     firstPulse = -1
     for i in range(0,len(oppsArr)):
@@ -100,10 +120,19 @@ def lockin(bsFile, oppsFile, mkidFile, lockin_dt = 0.25, mkidDefaultShift = 2.1,
     else:
         print("Can't find BS start point and end point")
         return
+    lockin_start,lockin_end = findSE(bsArr_new, BSFreq, LSE_TimeSpanRate)
+    lockin_start = math.ceil(lockin_start / lockin_dt) * lockin_dt
+    lockin_end = math.floor(lockin_end / lockin_dt) * lockin_dt
+    max_iter = math.floor((lockin_end - lockin_start) / lockin_dt + 0.5)
+    return (bsArr_new,scipy.interpolate.interp1d(bsArr_new[:,0],bsArr_new[:,1]))
+
+def lockin(bsArr,interp_BS, mkidFile):
+    mkidArr = numpy.loadtxt(mkidFile)
+    mkidArr = numpy.vstack((mkidArr[:,0],mkidArr[:,2])).T
     #Get calibrated mkid shift
     mkidArr = mkidArr * [1.0/FPSFreq,1.0]
     interp_mkid = scipy.interpolate.interp1d(mkidArr[:,0],mkidArr[:,1])
-    interp_BS = scipy.interpolate.interp1d(bsArr_new[:,0],bsArr_new[:,1])
+    print("start,end step=",bs_start,bs_end,ConvolStep)
     def S(A):
         sumS = 0.0
         for x in numpy.arange(bs_start,bs_end,ConvolStep):
@@ -117,10 +146,7 @@ def lockin(bsFile, oppsFile, mkidFile, lockin_dt = 0.25, mkidDefaultShift = 2.1,
         numpy.savetxt(ofs,mkidArr)
     print("Output calibrated mkid data done!")
     #Lock in
-    lockin_start,lockin_end = findSE(bsArr_new, BSFreq, LSE_TimeSpanRate)
-    lockin_start = math.ceil(lockin_start / lockin_dt) * lockin_dt
-    lockin_end = math.floor(lockin_end / lockin_dt) * lockin_dt
-    max_iter = math.floor((lockin_end - lockin_start) / lockin_dt + 0.5)
+    
     iter = 1
     sum_ON = 0.0
     num_ON = 0
@@ -129,7 +155,7 @@ def lockin(bsFile, oppsFile, mkidFile, lockin_dt = 0.25, mkidDefaultShift = 2.1,
     lockin_Arr = []
     for point in filter(lambda x:x[0] >= lockin_start, mkidArr):
         if point[0] < lockin_start + iter * lockin_dt:
-            if isInMask(point[0], bsArr_new, BSFreq, MaskRate):
+            if isInMask(point[0], bsArr, BSFreq, MaskRate):
                 continue
             if interp_BS(point[0]) > 0.5:
                 #ON
@@ -154,7 +180,9 @@ def lockin(bsFile, oppsFile, mkidFile, lockin_dt = 0.25, mkidDefaultShift = 2.1,
         numpy.savetxt(ofs,numpy.array(lockin_Arr))
     print("Output lockin data done!")
 
-    return 0
+    return mkidShift_calib[0]
 
 if not len(sys.argv) < 4:
-    lockin(sys.argv[1],sys.argv[2],sys.argv[3])
+    bsArr,interp_BS = lockinBS(sys.argv[1],sys.argv[2])
+    for mkid_file in sys.argv[3:]:
+        lockin(bsArr,interp_BS,mkid_file)
