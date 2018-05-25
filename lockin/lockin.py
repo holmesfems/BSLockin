@@ -15,7 +15,7 @@ lockin_dt = 0.25
 mkidDefaultShift = 0.0
 BSFreq = 10.0
 DAQFreq = 80000.0
-FPSFreq = 64.0
+FSPFreq = 64.0
 BSSE_TimeSpanRate = 10
 LSE_TimeSpanRate = 0.55
 mkidShiftErr = 0.5
@@ -67,9 +67,9 @@ def findSE(arr2d,freq,timeSpanRate):
     return (start,end)
 
 def isInMask(point, bsArr, bsFreq, MaskRate):
-    if len([x for x in bsArr if abs(point - x[0]) * bsFreq < MaskRate]) == 0:
-        return False
-    return True
+    if (numpy.abs(bsArr - point) < (MaskRate / bsFreq)).any():
+        return True
+    return False
 
 def lockinBS(bsFile, oppsFile, force=False):
     global bs_start
@@ -155,11 +155,11 @@ def lockin(bsArr,interp_BS, mkidFile, force = False):
         mkidShift = mkidArr[0][0]
     else:
         mkidArr = numpy.loadtxt(mkidFile)
-        mkidArr = numpy.vstack((mkidArr[:,0],mkidArr[:,2])).T
+        mkidArr = mkidArr[:,0:3:2]
         #Get calibrated mkid shift
-        mkidArr = mkidArr * [1.0/FPSFreq,1.0]
         #print("start,end step=",bs_start,bs_end,ConvolStep)
-        mkidArr_mean0 = mkidArr- [0,numpy.mean(mkidArr[:,1])]
+        mkidArr_mean0 = mkidArr / [FSPFreq,1] - [0,numpy.mean(mkidArr[:,1])]
+        
         print("Create interpolate function",flush=True)
         interp_mkid_mean0 = scipy.interpolate.interp1d(mkidArr_mean0[:,0],mkidArr_mean0[:,1])
         print("Done",flush=True)
@@ -176,15 +176,15 @@ def lockin(bsArr,interp_BS, mkidFile, force = False):
         #print("Mkid shift time is:",mkidShift_calib)
 
         #New correlate method:
-        bs_start2 = max(mkidArr[0][0]+mkidShiftErr+mkidDefaultShift,bs_start)
-        bs_end2 = min(mkidArr[-1][0]+mkidDefaultShift,bs_end)
+        bs_start2 = max(mkidArr_mean0[0][0]+mkidShiftErr+mkidDefaultShift,bs_start)
+        bs_end2 = min(mkidArr_mean0[-1][0]+mkidDefaultShift ,bs_end)
 
         xpoints_mkid = numpy.arange(bs_start2-mkidShiftErr-mkidDefaultShift,\
             bs_end2-mkidDefaultShift,mkidShiftStep)
     
         xpoints_BS = numpy.arange(bs_start2,bs_end2,mkidShiftStep)
-        corr1 = list(map(interp_mkid_mean0,xpoints_mkid))
-        corr2 = list(map(lambda x: -interp_BS(x) + 0.5,xpoints_BS))
+        corr1 = [interp_mkid_mean0(x) for x in xpoints_mkid]
+        corr2 = [-interp_BS(x) + 0.5 for x in xpoints_BS]
         print("Begin correlating, points_mkid = {0:d}, points_bs = {1:d}".format(len(xpoints_mkid),len(xpoints_BS)),flush = True)
 
         corrArr = scipy.signal.correlate(corr2,corr1,mode = 'valid')
@@ -192,7 +192,7 @@ def lockin(bsArr,interp_BS, mkidFile, force = False):
             numpy.savetxt(ofs,numpy.vstack((list(map(lambda i:mkidDefaultShift+mkidShiftStep*i,range(0,len(corrArr)))),corrArr)).T)
         mkidShift = corrArr.argmax()* mkidShiftStep + mkidDefaultShift
      
-        mkidArr = mkidArr + [mkidShift,0]
+        mkidArr = mkidArr_mean0 + [mkidShift,0]
         with open(mkidFile + ".calib","wb") as ofs:
             numpy.savetxt(ofs,mkidArr)
         print("Output calibrated mkid data done!")
@@ -216,7 +216,7 @@ def lockin(bsArr,interp_BS, mkidFile, force = False):
         with progbar.progbar(max_iter2) as pb:
             for point in mkidFiltered:
                 if point[0] < lockin_start2 + iter * lockin_dt:
-                    if isInMask(point[0], bsArr, BSFreq, MaskRate):
+                    if isInMask(point[0], bsArr[:,0], BSFreq, MaskRate):
                         continue
                     if interp_BS(point[0]) > 0.5:
                         #ON
