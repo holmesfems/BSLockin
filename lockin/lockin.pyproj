@@ -21,6 +21,9 @@
     <EnableUnmanagedDebugging>false</EnableUnmanagedDebugging>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="param.py">
+      <SubType>Code</SubType>
+    </Compile>
     <Compile Include="progbar.py">
       <SubType>Code</SubType>
     </Compile>
