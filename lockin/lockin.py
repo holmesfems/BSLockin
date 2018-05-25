@@ -171,8 +171,10 @@ def lockin(bsArr,interp_BS, mkidFile, force = False):
             bs_end2-mkidDefaultShift,mkidShiftStep)
     
         xpoints_BS = numpy.arange(bs_start2,bs_end2,mkidShiftStep)
-        corr1 = [interp_mkid_mean0(x) for x in xpoints_mkid]
-        corr2 = [-interp_BS(x) + 0.5 for x in xpoints_BS]
+        corr1 = interp_mkid_mean0(xpoints_mkid)
+        corr2 = -interp_BS(xpoints_BS)+0.5
+        #corr1 = [interp_mkid_mean0(x) for x in xpoints_mkid]
+        #corr2 = [-interp_BS(x) + 0.5 for x in xpoints_BS]
         print("Begin correlating, points_mkid = {0:d}, points_bs = {1:d}".format(len(xpoints_mkid),len(xpoints_BS)),flush = True)
 
         corrArr = scipy.signal.correlate(corr2,corr1,mode = 'valid')
@@ -262,4 +264,5 @@ if not len(sys.argv) < 4:
             with open("rejectlist.txt","wb") as ofs:
                 numpy.savetxt(ofs,shiftArr_rejected)
             print("{0:d} points are illegal!".format(len(shiftArr_rejected)))
+            print("Illigal mkid list: "+",".join(shiftArr_rejected[:,0]))
         print("Total used time is {0:d} seconds".format(int(time.time()-startTime)))
