@@ -6,6 +6,8 @@ class progbar:
         self.bars     = bars
         self.active   = True
         self.start    = time.time()
+        self._lastProg = 0
+        self.lastUpdate = self.start
 
     def dispose(self):
         if self.active:
@@ -26,21 +28,30 @@ class progbar:
         return self._period
 
     def update(self, tick):
-        rate = tick / self._period
+        rate = tick * 1.0 / self._period
 
         # progress rate
         str = "{0:4d}% ".format(int(rate*100))
 
         # progress bar
         bar_prog = int(rate * self.bars)
+        now = time.time()
+        if now - self.lastUpdate < 1 and bar_prog == self._lastProg:
+            return
+        self.lastUpdate = now
+        self._lastProg = bar_prog
         str += "|"
         str += "#" * (            bar_prog)
         str += "-" * (self.bars - bar_prog)
         str += "|"
-
+        
         # calc end
-        elapsed = time.time() - self.start
-        predict = (elapsed * (1 - rate) / rate) if not rate == 0.0 else 0
+        elapsed = now - self.start
+        predict = 0.0
+        if self.active:
+            predict = (elapsed * (1 - rate) / rate) if not rate == 0.0 else 0
+        else:
+            predict = elapsed
         s = int(predict)
         m, s = divmod(s, 60)
         h, m = divmod(m, 60)
