@@ -158,7 +158,8 @@ def lockin(bsArr,interp_BS, mkidFile, force = False):
         mkidArr = mkidArr[:,0:3:2]
         #Get calibrated mkid shift
         #print("start,end step=",bs_start,bs_end,ConvolStep)
-        mkidArr_mean0 = mkidArr / [FSPFreq,1] - [0,numpy.mean(mkidArr[:,1])]
+        mean = numpy.mean(mkidArr[:,1])
+        mkidArr_mean0 = mkidArr / [FSPFreq,1] - [0,mean]
         
         print("Create interpolate function",flush=True)
         interp_mkid_mean0 = scipy.interpolate.interp1d(mkidArr_mean0[:,0],mkidArr_mean0[:,1])
@@ -194,8 +195,9 @@ def lockin(bsArr,interp_BS, mkidFile, force = False):
      
         mkidArr = mkidArr_mean0 + [mkidShift,0]
         with open(mkidFile + ".calib","wb") as ofs:
-            numpy.savetxt(ofs,mkidArr)
+            numpy.savetxt(ofs,mkidArr+[0,mean])
         print("Output calibrated mkid data done!")
+        force = True
     print("Mkid shift = ",mkidShift,flush = True)
     #Lock in
     if not force and os.path.exists(mkidFile+".lockin"):
