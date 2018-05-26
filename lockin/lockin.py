@@ -132,17 +132,21 @@ def lockinBS(bsFile, oppsFile, force=False):
     
     return (bsArr_new,scipy.interpolate.interp1d(bsArr_new[:,0],bsArr_new[:,1]))
 
-def lockin(bsArr,interp_BS, mkidFile, force = False):
+def lockin(bsArr,interp_BS, mkidFile, force = False, shiftTime = None):
     mkidArr = []
     mkidShift = 0.0
     print("Lockin File:",mkidFile,flush = True)
+    #generate shift time
     if not force and os.path.exists(mkidFile + ".calib"):
         print("Calib file detected!",flush = True)
         mkidArr = numpy.loadtxt(mkidFile + ".calib")
         mkidShift = mkidArr[0][0]
+    elif not shiftTime == None:
+        print("Use detected shift time",flush = True)
+        mkidShift = shiftTime
+        mkidArr = numpy.loadtxt(mkidFile)[:,0:3:2]+[mkidShift,0]
     else:
-        mkidArr = numpy.loadtxt(mkidFile)
-        mkidArr = mkidArr[:,0:3:2]
+        mkidArr = numpy.loadtxt(mkidFile)[:,0:3:2]
         #Get calibrated mkid shift
         #print("start,end step=",bs_start,bs_end,ConvolStep)
         mean = numpy.mean(mkidArr[:,1])
@@ -235,25 +239,33 @@ def lockin(bsArr,interp_BS, mkidFile, force = False):
     return mkidShift
 
 if not len(sys.argv) < 4:
-    force = False
+
     mkid_file_count = len(sys.argv[3:])
     if mkid_file_count <= mkidForceCount:
         force = True
     bsArr,interp_BS = lockinBS(sys.argv[1],sys.argv[2],force)
     shiftlist = []
     startTime = time.time()
-    
+    if use_shift:
+        if(os.path.exists("shiftlist.txt")):
+            shiftlist = [{math.floor(x[0]+0.5):x[1]} for x in numpy.loadtxt("shiftlist.txt")]
+            print("Detected shiftlist",flush=True)
+        else:
+            use_shift = False
     for mkid_file in sys.argv[3:]:
         mkidNoRe = re.compile("MKID(?P<No>\d\d\d)")
         mkidNoMatch = mkidNoRe.search(mkid_file)
         mkidNo = int(mkidNoMatch.group('No'))
         print("MKID No:",mkidNo,flush=True)
-        shift = lockin(bsArr,interp_BS,mkid_file,force)
-        print("Shift = ",shift,flush = True)
-        shiftlist.append([float(mkidNo),shift])
+        if use_shift:
+            lockin(bsArr,interp_BS,force,shiftTime = shiftlist[mkidNo])
+        else:
+            shift = lockin(bsArr,interp_BS,mkid_file,force)
+            print("Shift = ",shift,flush = True)
+            shiftlist.append([float(mkidNo),shift])
     shiftArr = numpy.array(shiftlist)
     #shiftArr.sort(0)
-    if not force:
+    if not mkid_file_count <= mkidForceCount and not use_shift:
         with open("shiftlist.txt","wb") as ofs:
             numpy.savetxt(ofs,shiftArr[shiftArr[:,0].argsort(),:])
         print("Shift list has generated!")
@@ -264,5 +276,6 @@ if not len(sys.argv) < 4:
             with open("rejectlist.txt","wb") as ofs:
                 numpy.savetxt(ofs,shiftArr_rejected)
             print("{0:d} points are illegal!".format(len(shiftArr_rejected)))
-            print("Illigal mkid list: "+",".join(shiftArr_rejected[:,0]))
+            strrejectx = ["%03d" % math.floor(x[0]+0.5) for x in shiftArr_rejected]
+            print("Illigal mkid list: "+" , ".join(strrejectx))
         print("Total used time is {0:d} seconds".format(int(time.time()-startTime)))
