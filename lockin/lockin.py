@@ -248,7 +248,7 @@ if not len(sys.argv) < 4:
     startTime = time.time()
     if use_shift:
         if(os.path.exists("shiftlist.txt")):
-            shiftlist = [{math.floor(x[0]+0.5):x[1]} for x in numpy.loadtxt("shiftlist.txt")]
+            shiftlist = {math.floor(x[0]+0.5):x[1] for x in numpy.loadtxt("shiftlist.txt")}
             print("Detected shiftlist",flush=True)
         else:
             use_shift = False
@@ -258,7 +258,7 @@ if not len(sys.argv) < 4:
         mkidNo = int(mkidNoMatch.group('No'))
         print("MKID No:",mkidNo,flush=True)
         if use_shift:
-            lockin(bsArr,interp_BS,force,shiftTime = shiftlist[mkidNo])
+            lockin(bsArr,interp_BS,mkid_file,force,shiftTime = shiftlist[mkidNo])
         else:
             shift = lockin(bsArr,interp_BS,mkid_file,force)
             print("Shift = ",shift,flush = True)
