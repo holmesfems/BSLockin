@@ -147,6 +147,8 @@ def lockin(bsArr,interp_BS, mkidFile, force = False, shiftTime = None):
             doCalib = False
             corrArr = numpy.loadtxt(mkidFile + ".corr")
             corr_isPositive = (scipy.interpolate.interp1d(corrArr[:,0],corrArr[:,1])(mkidShift) > 0)
+        else:
+            print("Use detected shift time:",shiftTime,flush = True)
 
     elif not shiftTime == None:
         print("Use detected shift time:",shiftTime,flush = True)
@@ -161,12 +163,12 @@ def lockin(bsArr,interp_BS, mkidFile, force = False, shiftTime = None):
         mkidArr_mean0 = mkidArr - [0,mean]
         
         print("Create interpolate function",flush=True)
-        interp_mkid_mean0 = scipy.interpolate.interp1d(mkidArr_mean0[:,0],mkidArr_mean0[:,1],fill_value = [mkidArr_mean0[0][1],mkidArr_mean0[-1][1]])
+        interp_mkid_mean0 = scipy.interpolate.interp1d(mkidArr_mean0[:,0],mkidArr_mean0[:,1],fill_value = (mkidArr_mean0[0][1],mkidArr_mean0[-1][1]))
         print("Done",flush=True)
         _mkidDefaultShift = 0.0
         #New correlate method:
         if not shiftTime == None:
-            _mkidDefaultShift = shiftTime - 0.5 * mkidShiftErr
+            _mkidDefaultShift = shiftTime - 0.5 * mkidShiftErr + mkidBaseShift
         else:
             _mkidDefaultShift = mkidDefaultShift
 
@@ -251,11 +253,12 @@ if not len(sys.argv) < 4:
         force = True
     bsArr,interp_BS = lockinBS(sys.argv[1],sys.argv[2],force)
     shiftlist = []
+    shiftReadlist = {}
     corrNegativelist = []
     startTime = time.time()
     if use_shift:
         if(os.path.exists("shiftlist.txt")):
-            shiftlist = {math.floor(x[0]+0.5):x[1] for x in numpy.loadtxt("shiftlist.txt")}
+            shiftReadlist = {math.floor(x[0]+0.5):x[1] for x in numpy.loadtxt("shiftlist.txt")}
             print("Detected shiftlist",flush=True)
         else:
             use_shift = False
@@ -266,33 +269,35 @@ if not len(sys.argv) < 4:
         print("MKID No:",mkidNo,flush=True)
         shift,corr_isPositive = None,None
         if use_shift:
-            shift,corr_isPositive = lockin(bsArr,interp_BS,mkid_file,force,shiftTime = shiftlist[mkidNo])
+            shift,corr_isPositive = lockin(bsArr,interp_BS,mkid_file,force,shiftTime = shiftReadlist[mkidNo])
         else:
             shift,corr_isPositive = lockin(bsArr,interp_BS,mkid_file,force)
-        print("Shift = ",shift,flush = True)
-        if not shift == None and not use_shift:
+        #print("Shift = ",shift,flush = True)
+        if not shift == None:
             shiftlist.append([float(mkidNo),shift])
         if not corr_isPositive:
             corrNegativelist.append(mkidNo)
     shiftArr = numpy.array(shiftlist)
     #shiftArr.sort(0)
-    if not mkid_file_count <= mkidForceCount and not use_shift:
-        with open("shiftlist.txt","wb") as ofs:
-            numpy.savetxt(ofs,shiftArr[shiftArr[:,0].argsort(),:])
-        print("Shift list has generated!")
-        m = numpy.mean(shiftArr[:,1])
-        s = numpy.std(shiftArr[:,1])
-        shiftArr_rejected = [x for x in shiftArr if abs(x[1] - m) >= s*rejectRate]
-        if len(shiftArr_rejected) > 0:
-            with open("rejectlist.txt","wb") as ofs:
-                numpy.savetxt(ofs,shiftArr_rejected)
-            print("{0:d} points are illegal!".format(len(shiftArr_rejected)))
-            strrejectx = ["%03d" % math.floor(x[0]+0.5) for x in shiftArr_rejected]
-            print("Illigal mkid list: "+", ".join(strrejectx))
+    shiftlistName = "shiftlist2.txt" if use_shift else "shiftlist.txt"
+    if not mkid_file_count <= mkidForceCount:
+        if len(shiftArr) > 0:
+            with open(shiftlistName,"wb") as ofs:
+                numpy.savetxt(ofs,shiftArr[shiftArr[:,0].argsort(),:])
+            print("Shift list has generated!")
+            m = numpy.mean(shiftArr[:,1])
+            s = numpy.std(shiftArr[:,1])
+            shiftArr_rejected = [x for x in shiftArr if abs(x[1] - m) >= s*rejectRate]
+            if len(shiftArr_rejected) > 0:
+                with open("rejectlist.txt","wb") as ofs:
+                    numpy.savetxt(ofs,shiftArr_rejected)
+                print("{0:d} points are illegal!".format(len(shiftArr_rejected)))
+                strrejectx = ["%03d" % math.floor(x[0]+0.5) for x in shiftArr_rejected]
+                print("Illigal mkid list: "+", ".join(strrejectx))
         if len(corrNegativelist) > 0:
             print("{0:d} mkids has negative correlation function!".format(len(corrNegativelist)))
             corrNegativelistStr = ["%03d" % x for x in corrNegativelist]
             print("Negative mkid list: ",", ".join(corrNegativelistStr))
             with open("negativelist.txt","w") as ofs:
                 ofs.write("\n".join(corrNegativelistStr))
-        print("Total used time is {0:d} seconds".format(int(time.time()-startTime)))
+    print("Total used time is {0:d} seconds".format(int(time.time()-startTime)))
