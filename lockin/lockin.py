@@ -149,7 +149,7 @@ def lockin(bsArr,interp_BS, mkidFile, force = False, shiftTime = None):
             corr_isPositive = (scipy.interpolate.interp1d(corrArr[:,0],corrArr[:,1])(mkidShift) > 0)
 
     elif not shiftTime == None:
-        print("Use detected shift time",flush = True)
+        print("Use detected shift time:",shiftTime,flush = True)
         mkidShift = shiftTime
 
     
@@ -161,7 +161,7 @@ def lockin(bsArr,interp_BS, mkidFile, force = False, shiftTime = None):
         mkidArr_mean0 = mkidArr - [0,mean]
         
         print("Create interpolate function",flush=True)
-        interp_mkid_mean0 = scipy.interpolate.interp1d(mkidArr_mean0[:,0],mkidArr_mean0[:,1])
+        interp_mkid_mean0 = scipy.interpolate.interp1d(mkidArr_mean0[:,0],mkidArr_mean0[:,1],fill_value = [mkidArr_mean0[0][1],mkidArr_mean0[-1][1]])
         print("Done",flush=True)
         _mkidDefaultShift = 0.0
         #New correlate method:
@@ -264,15 +264,16 @@ if not len(sys.argv) < 4:
         mkidNoMatch = mkidNoRe.search(mkid_file)
         mkidNo = int(mkidNoMatch.group('No'))
         print("MKID No:",mkidNo,flush=True)
+        shift,corr_isPositive = None,None
         if use_shift:
-            lockin(bsArr,interp_BS,mkid_file,force,shiftTime = shiftlist[mkidNo])
+            shift,corr_isPositive = lockin(bsArr,interp_BS,mkid_file,force,shiftTime = shiftlist[mkidNo])
         else:
             shift,corr_isPositive = lockin(bsArr,interp_BS,mkid_file,force)
-            print("Shift = ",shift,flush = True)
-            if not shift == None:
-                shiftlist.append([float(mkidNo),shift])
-            if not corr_isPositive:
-                corrNegativelist.append(mkidNo)
+        print("Shift = ",shift,flush = True)
+        if not shift == None and not use_shift:
+            shiftlist.append([float(mkidNo),shift])
+        if not corr_isPositive:
+            corrNegativelist.append(mkidNo)
     shiftArr = numpy.array(shiftlist)
     #shiftArr.sort(0)
     if not mkid_file_count <= mkidForceCount and not use_shift:
