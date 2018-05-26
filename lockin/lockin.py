@@ -144,7 +144,7 @@ def lockin(bsArr,interp_BS, mkidFile, force = False, shiftTime = None):
     elif not shiftTime == None:
         print("Use detected shift time",flush = True)
         mkidShift = shiftTime
-        mkidArr = numpy.loadtxt(mkidFile)[:,0:3:2]+[mkidShift,0]
+        mkidArr = numpy.loadtxt(mkidFile)[:,0:3:2]/[FSPFreq,1]+[mkidShift,0]
     else:
         mkidArr = numpy.loadtxt(mkidFile)[:,0:3:2]
         #Get calibrated mkid shift
