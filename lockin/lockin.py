@@ -137,6 +137,7 @@ def lockin(bsArr,interp_BS, mkidFile, force = False, shiftTime = None):
     mkidShift = 0.0
     print("Lockin File:",mkidFile,flush = True)
     doCalib = True
+    corr_isPositive = None
     #generate shift time
     if not force and os.path.exists(mkidFile + ".calib"):
         print("Calib file detected!",flush = True)
@@ -144,10 +145,14 @@ def lockin(bsArr,interp_BS, mkidFile, force = False, shiftTime = None):
         mkidShift = mkidArr[0][0]
         if mkidShift == shiftTime and os.path.exists(mkidFile + ".corr"):
             doCalib = False
+            corrArr = numpy.loadtxt(mkidFile + ".corr")
+            corr_isPositive = (scipy.interpolate.interp1d(corrArr[:,0],corrArr[:,1])(mkidShift) > 0)
+
     elif not shiftTime == None:
         print("Use detected shift time",flush = True)
         mkidShift = shiftTime
 
+    
     if doCalib:
         mkidArr = numpy.loadtxt(mkidFile)[:,0:3:2] / [FSPFreq,1]
         #Get calibrated mkid shift
@@ -174,16 +179,19 @@ def lockin(bsArr,interp_BS, mkidFile, force = False, shiftTime = None):
         xpoints_BS = numpy.arange(bs_start2,bs_end2,mkidShiftStep)
         corr1 = interp_mkid_mean0(xpoints_mkid)
         corr2 = -interp_BS(xpoints_BS)+0.5
-        #corr1 = [interp_mkid_mean0(x) for x in xpoints_mkid]
-        #corr2 = [-interp_BS(x) + 0.5 for x in xpoints_BS]
+
         print("Begin correlating, points_mkid = {0:d}, points_bs = {1:d}".format(len(xpoints_mkid),len(xpoints_BS)),flush = True)
 
         corrArr = scipy.signal.correlate(corr2,corr1,mode = 'valid')
         with open(mkid_file+".corr","wb") as ofs:
             numpy.savetxt(ofs,numpy.array([[_mkidDefaultShift+x*mkidShiftStep,corrArr[x]] for x in range(0,len(corrArr))]))
-            #numpy.savetxt(ofs,numpy.vstack((list(map(lambda i:_mkidDefaultShift+mkidShiftStep*i,range(0,len(corrArr)))),corrArr)).T)
-        mkidShift = numpy.abs(corrArr).argmax()* mkidShiftStep + _mkidDefaultShift
-     
+        argmax = numpy.abs(corrArr).argmax()
+        mkidShift = argmax * mkidShiftStep + _mkidDefaultShift
+        if corrArr[argmax] < 0:
+            corr_isPositive = False
+            print("Warning: detected minus correlation function")
+        else:
+            corr_isPositive = True
         mkidArr = mkidArr_mean0 + [mkidShift,0]
         with open(mkidFile + ".calib","wb") as ofs:
             numpy.savetxt(ofs,mkidArr+[0,mean])
@@ -221,7 +229,7 @@ def lockin(bsArr,interp_BS, mkidFile, force = False, shiftTime = None):
                         num_OFF = num_OFF + 1
                 else:
                     if num_ON > 0 and num_OFF > 0:
-                        lockin_Arr.append([lockin_start2 + (iter - 0.5) * lockin_dt, - sum_ON/num_ON + sum_OFF/num_OFF])
+                        lockin_Arr.append([lockin_start2 + (iter - 0.5) * lockin_dt, - sum_ON/num_ON + sum_OFF/num_OFF if corr_isPositive == None or corr_isPositive else sum_ON/num_ON - sum_OFF/num_OFF])
                         sum_ON,sum_OFF = 0.0, 0.0
                         num_ON,num_OFF = 0, 0
                         iter = iter + 1
@@ -234,7 +242,7 @@ def lockin(bsArr,interp_BS, mkidFile, force = False, shiftTime = None):
         with open(mkidFile+".lockin","wb") as ofs:
             numpy.savetxt(ofs,numpy.array(lockin_Arr))
         print("Output lockin data done!",flush=True)
-    return mkidShift
+    return (mkidShift,corr_isPositive)
 
 if not len(sys.argv) < 4:
 
@@ -243,6 +251,7 @@ if not len(sys.argv) < 4:
         force = True
     bsArr,interp_BS = lockinBS(sys.argv[1],sys.argv[2],force)
     shiftlist = []
+    corrNegativelist = []
     startTime = time.time()
     if use_shift:
         if(os.path.exists("shiftlist.txt")):
@@ -258,9 +267,12 @@ if not len(sys.argv) < 4:
         if use_shift:
             lockin(bsArr,interp_BS,mkid_file,force,shiftTime = shiftlist[mkidNo])
         else:
-            shift = lockin(bsArr,interp_BS,mkid_file,force)
+            shift,corr_isPositive = lockin(bsArr,interp_BS,mkid_file,force)
             print("Shift = ",shift,flush = True)
-            shiftlist.append([float(mkidNo),shift])
+            if not shift == None:
+                shiftlist.append([float(mkidNo),shift])
+            if not corr_isPositive:
+                corrNegativelist.append(mkidNo)
     shiftArr = numpy.array(shiftlist)
     #shiftArr.sort(0)
     if not mkid_file_count <= mkidForceCount and not use_shift:
@@ -275,5 +287,11 @@ if not len(sys.argv) < 4:
                 numpy.savetxt(ofs,shiftArr_rejected)
             print("{0:d} points are illegal!".format(len(shiftArr_rejected)))
             strrejectx = ["%03d" % math.floor(x[0]+0.5) for x in shiftArr_rejected]
-            print("Illigal mkid list: "+" , ".join(strrejectx))
+            print("Illigal mkid list: "+", ".join(strrejectx))
+        if len(corrNegativelist) > 0:
+            print("{0:d} mkids has negative correlation function!".format(len(corrNegativelist)))
+            corrNegativelistStr = ["%03d" % x for x in corrNegativelist]
+            print("Negative mkid list: ",", ".join(corrNegativelistStr))
+            with open("negativelist.txt","w") as ofs:
+                ofs.write("\n".join(corrNegativelistStr))
         print("Total used time is {0:d} seconds".format(int(time.time()-startTime)))
