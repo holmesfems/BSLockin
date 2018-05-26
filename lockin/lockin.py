@@ -136,43 +136,40 @@ def lockin(bsArr,interp_BS, mkidFile, force = False, shiftTime = None):
     mkidArr = []
     mkidShift = 0.0
     print("Lockin File:",mkidFile,flush = True)
+    doCalib = True
     #generate shift time
     if not force and os.path.exists(mkidFile + ".calib"):
         print("Calib file detected!",flush = True)
         mkidArr = numpy.loadtxt(mkidFile + ".calib")
         mkidShift = mkidArr[0][0]
+        if mkidShift == shiftTime and os.path.exists(mkidFile + ".corr"):
+            doCalib = False
     elif not shiftTime == None:
         print("Use detected shift time",flush = True)
         mkidShift = shiftTime
-        mkidArr = numpy.loadtxt(mkidFile)[:,0:3:2]/[FSPFreq,1]+[mkidShift,0]
-    else:
-        mkidArr = numpy.loadtxt(mkidFile)[:,0:3:2]
+
+    if doCalib:
+        mkidArr = numpy.loadtxt(mkidFile)[:,0:3:2] / [FSPFreq,1]
         #Get calibrated mkid shift
         #print("start,end step=",bs_start,bs_end,ConvolStep)
         mean = numpy.mean(mkidArr[:,1])
-        mkidArr_mean0 = mkidArr / [FSPFreq,1] - [0,mean]
+        mkidArr_mean0 = mkidArr - [0,mean]
         
         print("Create interpolate function",flush=True)
         interp_mkid_mean0 = scipy.interpolate.interp1d(mkidArr_mean0[:,0],mkidArr_mean0[:,1])
         print("Done",flush=True)
-        #def S(A):
-        
-            #correlate:
-            #def F(x):
-            #    return interp_mkid(x-A) * interp_BS(x)
-            #i1 = scipy.integrate.quad(F,bs_start,bs_end)
-            #return i1
-        #mkidShift = linear_fmin(S,mkidDefaultShift,mkidDefaultShift+mkidShiftErr,mkidShiftStep)
-        #print("Calibrating minimum point by N-M method",flush=True)
-        #mkidShift_calib = scipy.optimize.fmin(S,mkidShift)
-        #print("Mkid shift time is:",mkidShift_calib)
-
+        _mkidDefaultShift = 0.0
         #New correlate method:
-        bs_start2 = max(mkidArr_mean0[0][0]+mkidShiftErr+mkidDefaultShift,bs_start)
-        bs_end2 = min(mkidArr_mean0[-1][0]+mkidDefaultShift ,bs_end)
+        if not shiftTime == None:
+            _mkidDefaultShift = shiftTime - 0.5 * mkidShiftErr
+        else:
+            _mkidDefaultShift = mkidDefaultShift
 
-        xpoints_mkid = numpy.arange(bs_start2-mkidShiftErr-mkidDefaultShift,\
-            bs_end2-mkidDefaultShift,mkidShiftStep)
+        bs_start2 = max(mkidArr_mean0[0][0]+mkidShiftErr+_mkidDefaultShift,bs_start)
+        bs_end2 = min(mkidArr_mean0[-1][0]+_mkidDefaultShift ,bs_end)
+
+        xpoints_mkid = numpy.arange(bs_start2-mkidShiftErr-_mkidDefaultShift,\
+            bs_end2-_mkidDefaultShift,mkidShiftStep)
     
         xpoints_BS = numpy.arange(bs_start2,bs_end2,mkidShiftStep)
         corr1 = interp_mkid_mean0(xpoints_mkid)
@@ -183,8 +180,9 @@ def lockin(bsArr,interp_BS, mkidFile, force = False, shiftTime = None):
 
         corrArr = scipy.signal.correlate(corr2,corr1,mode = 'valid')
         with open(mkid_file+".corr","wb") as ofs:
-            numpy.savetxt(ofs,numpy.vstack((list(map(lambda i:mkidDefaultShift+mkidShiftStep*i,range(0,len(corrArr)))),corrArr)).T)
-        mkidShift = corrArr.argmax()* mkidShiftStep + mkidDefaultShift
+            numpy.savetxt(ofs,numpy.array([[_mkidDefaultShift+x*mkidShiftStep,corrArr[x]] for x in range(0,len(corrArr))]))
+            #numpy.savetxt(ofs,numpy.vstack((list(map(lambda i:_mkidDefaultShift+mkidShiftStep*i,range(0,len(corrArr)))),corrArr)).T)
+        mkidShift = numpy.abs(corrArr).argmax()* mkidShiftStep + _mkidDefaultShift
      
         mkidArr = mkidArr_mean0 + [mkidShift,0]
         with open(mkidFile + ".calib","wb") as ofs:
