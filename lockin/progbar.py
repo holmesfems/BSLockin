@@ -36,7 +36,7 @@ class progbar:
         # progress bar
         bar_prog = int(rate * self.bars)
         now = time.time()
-        if now - self.lastUpdate < 1 and bar_prog == self._lastProg:
+        if now - self.lastUpdate < 1 and bar_prog == self._lastProg and self.active:
             return
         self.lastUpdate = now
         self._lastProg = bar_prog

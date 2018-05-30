@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 import scipy.interpolate
 import scipy.optimize
 import scipy.integrate
@@ -168,14 +169,16 @@ def lockin(bsArr,interp_BS, mkidFile, force = False, shiftTime = None):
         _mkidDefaultShift = 0.0
         #New correlate method:
         if not shiftTime == None:
-            _mkidDefaultShift = shiftTime - 0.5 * mkidShiftErr + mkidBaseShift
+            _mkidShiftErr = mkidShiftErr_useShift
+            _mkidDefaultShift = shiftTime - 0.5 * _mkidShiftErr + mkidBaseShift
         else:
+            _mkidShiftErr = mkidShiftErr
             _mkidDefaultShift = mkidDefaultShift
 
-        bs_start2 = max(mkidArr_mean0[0][0]+mkidShiftErr+_mkidDefaultShift,bs_start)
+        bs_start2 = max(mkidArr_mean0[0][0]+_mkidShiftErr+_mkidDefaultShift,bs_start)
         bs_end2 = min(mkidArr_mean0[-1][0]+_mkidDefaultShift ,bs_end)
 
-        xpoints_mkid = numpy.arange(bs_start2-mkidShiftErr-_mkidDefaultShift,\
+        xpoints_mkid = numpy.arange(bs_start2-_mkidShiftErr-_mkidDefaultShift,\
             bs_end2-_mkidDefaultShift,mkidShiftStep)
     
         xpoints_BS = numpy.arange(bs_start2,bs_end2,mkidShiftStep)
@@ -206,7 +209,7 @@ def lockin(bsArr,interp_BS, mkidFile, force = False, shiftTime = None):
     else:
         lockin_start2 = math.ceil(max(lockin_start,mkidArr[0][0]))
         lockin_end2 = math.floor(min(lockin_end,mkidArr[-1][0]))
-        max_iter2 = math.floor((lockin_end - lockin_start) / lockin_dt + 0.5)
+        max_iter2 = math.floor((lockin_end2 - lockin_start2) / lockin_dt + 0.5)
 
         iter = 1
         sum_ON = 0.0
@@ -218,29 +221,28 @@ def lockin(bsArr,interp_BS, mkidFile, force = False, shiftTime = None):
         print("Begin lockin:",flush=True)
         with progbar.progbar(max_iter2) as pb:
             for point in mkidFiltered:
-                if point[0] < lockin_start2 + iter * lockin_dt:
-                    if isInMask(point[0], bsArr[:,0], BSFreq, MaskRate):
-                        continue
-                    if interp_BS(point[0]) > 0.5:
-                        #ON
-                        sum_ON = sum_ON + point[1]
-                        num_ON = num_ON + 1
-                    else:
-                        #OFF
-                        sum_OFF = sum_OFF + point[1]
-                        num_OFF = num_OFF + 1
-                else:
+                if not point[0] < lockin_start2 + iter * lockin_dt:
                     if num_ON > 0 and num_OFF > 0:
                         lockin_Arr.append([lockin_start2 + (iter - 0.5) * lockin_dt, - sum_ON/num_ON + sum_OFF/num_OFF if corr_isPositive == None or corr_isPositive else sum_ON/num_ON - sum_OFF/num_OFF])
                         sum_ON,sum_OFF = 0.0, 0.0
                         num_ON,num_OFF = 0, 0
                         iter = iter + 1
                         pb.update(iter)
-                        if(iter > max_iter2):
+                        if(iter >= max_iter2):
                             break
                     else:
                         print("Illigal data has occured!")
                         return
+                if isInMask(point[0], bsArr[:,0], BSFreq, MaskRate):
+                    continue
+                if interp_BS(point[0]) > 0.5:
+                    #ON
+                    sum_ON = sum_ON + point[1]
+                    num_ON = num_ON + 1
+                else:
+                    #OFF
+                    sum_OFF = sum_OFF + point[1]
+                    num_OFF = num_OFF + 1
         with open(mkidFile+".lockin","wb") as ofs:
             numpy.savetxt(ofs,numpy.array(lockin_Arr))
         print("Output lockin data done!",flush=True)
@@ -301,3 +303,6 @@ if not len(sys.argv) < 4:
             with open("negativelist.txt","w") as ofs:
                 ofs.write("\n".join(corrNegativelistStr))
     print("Total used time is {0:d} seconds".format(int(time.time()-startTime)))
+
+else:
+    print("Usage: lockin.py [BS_DATA.out] [OPPS_DATA.out] [MKID_DATA]+")
