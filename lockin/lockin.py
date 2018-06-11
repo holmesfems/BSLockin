@@ -174,9 +174,19 @@ def lockin(bsArr,interp_BS, mkidFile, force = False, shiftTime = None):
         else:
             _mkidShiftErr = mkidShiftErr
             _mkidDefaultShift = mkidDefaultShift
-
-        bs_start2 = max(mkidArr_mean0[0][0]+_mkidShiftErr+_mkidDefaultShift,bs_start)
-        bs_end2 = min(mkidArr_mean0[-1][0]+_mkidDefaultShift ,bs_end)
+        bs_start2 = 0.0
+        bs_end2 = 0.0
+        shiftstart = 0.0
+        shiftend = 0.0
+        if use_costumSE:
+            print("use costum SE: %.3f ~ %.3f" % (mkidShift_costumS, mkidShift_costumE))
+            shiftstart = (1 - mkidShift_costumS) * mkidArr_mean0[0][0] + (mkidShift_costumS) * mkidArr_mean0[-1][0] + _mkidShiftErr
+            shiftend = (1 - mkidShift_costumE) * mkidArr_mean0[0][0] + (mkidShift_costumE) * mkidArr_mean0[-1][0] + _mkidShiftErr
+        else:
+            shiftstart = bs_start
+            shiftend = bs_end
+        bs_start2 = max(mkidArr_mean0[0][0]+_mkidShiftErr+_mkidDefaultShift,shiftstart)
+        bs_end2 = min(mkidArr_mean0[-1][0]+_mkidDefaultShift ,shiftend)
 
         xpoints_mkid = numpy.arange(bs_start2-_mkidShiftErr-_mkidDefaultShift,\
             bs_end2-_mkidDefaultShift,mkidShiftStep)
