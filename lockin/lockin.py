@@ -42,7 +42,7 @@ def linear_fmin(func,start,end,step):
     return xmin
 
 def findSE(arr2d,freq,timeSpanRate):
-    start = -1.0;
+    start = -1.0
     for i in range(0,len(arr2d)):
         if(arr2d[i][1] == arr2d[i+1][1]) and (-arr2d[i][0] + arr2d[i+1][0]) * freq < timeSpanRate:
             start = arr2d[i][0]
@@ -94,7 +94,7 @@ def lockinBS(bsFile, oppsFile):
         #Calculate Zero point of time:
         #Zero Point is firstPulse of opps
         #Get first timestamp of BS
-        bsFileOpen = open(bsFile);
+        bsFileOpen = open(bsFile)
         timeStr = bsFileOpen.readline()
         timeStrRe = re.compile(r"#(?P<year>\d+)-(?P<month>\d+)-(?P<day>\d+)T(?P<hour>\d+):(?P<minute>\d+):(?P<second>\d+)\.(?P<microsecond>\d+)")
         timeStrMatch = timeStrRe.match(timeStr)
@@ -229,9 +229,10 @@ def lockin(bsArr,interp_BS, mkidFile, shiftTime = None):
         num_OFF = 0.0
         lockin_Arr = []
         mkidFiltered = [x for x in mkidArr if x[0] >= lockin_start2]
+        mkidOutofMask = [x for x in mkidFiltered if not isInMask(x[0],bsArr[:,0],Param['BSFreq'], Param['MaskRate'])]
         print("Begin lockin:",flush=True)
         with progbar.progbar(max_iter2) as pb:
-            for point in mkidFiltered:
+            for point in mkidOutofMask:
                 if not point[0] < lockin_start2 + iter * Param['lockin_dt']:
                     if num_ON > 0 and num_OFF > 0:
                         lockin_Arr.append([lockin_start2 + (iter - 0.5) * Param['lockin_dt'], - sum_ON/num_ON + sum_OFF/num_OFF if corr_isPositive == None or corr_isPositive else sum_ON/num_ON - sum_OFF/num_OFF])
@@ -244,8 +245,6 @@ def lockin(bsArr,interp_BS, mkidFile, shiftTime = None):
                     else:
                         print("Illigal data has occured!")
                         return
-                if isInMask(point[0], bsArr[:,0], Param['BSFreq'], Param['MaskRate']):
-                    continue
                 if interp_BS(point[0]) > 0.5:
                     #ON
                     sum_ON = sum_ON + point[1]
@@ -256,12 +255,14 @@ def lockin(bsArr,interp_BS, mkidFile, shiftTime = None):
                     num_OFF = num_OFF + 1
         with open(mkidFile+".lockin","wb") as ofs:
             numpy.savetxt(ofs,numpy.array(lockin_Arr))
+        with open(mkidFile+".outmask","wb") as ofs:
+            numpy.savetxt(ofs,numpy.array(mkidOutofMask))
         print("Output lockin data done!",flush=True)
     return (mkidShift,corr_isPositive)
 
 paramSetRe = re.compile(r"(?P<param>[^=]+)=(?P<value>[^=]+)")
 paramSetList = [x for x in sys.argv if not paramSetRe.match(x) is None]
-intRe = re.compile(r"-?\d+")
+intRe = re.compile(r"-?\d+$")
 boolRe = re.compile(r"(True)|(False)")
 #set params
 for item in paramSetList:
@@ -298,7 +299,7 @@ if not len(FilteredParam) < 4:
         else:
             Param['use_shift'] = False
     for mkid_file in FilteredParam[3:]:
-        mkidNoRe = re.compile("MKID(?P<No>\d\d\d)")
+        mkidNoRe = re.compile(r"MKID(?P<No>\d\d\d)")
         mkidNoMatch = mkidNoRe.search(mkid_file)
         mkidNo = int(mkidNoMatch.group('No'))
         print("MKID No:",mkidNo,flush=True)
