@@ -66,9 +66,11 @@ def genMaskedBS(bsArr):
     bsmp = (bsm + [-mrdt+0.5*quant,0])*[1,0]+[0,0.5]
     bspm = (bsp + [+mrdt-0.5*quant,0])*[1,0]+[0,0.5]
     bspp = bsp + [+mrdt+0.5*quant,0]
-    res_x = numpy.hstack((bsArr[0][0],numpy.array([bsmm[:,0],bsmp[:,0],bspm[:,0],bspp[:,0]]).T.ravel(),bsArr[-1][0]))
-    res_y = numpy.hstack((bsArr[0][1],numpy.array([bsmm[:,1],bsmp[:,1],bspm[:,1],bspp[:,1]]).T.ravel(),bsArr[-1][1]))
-    return numpy.vstack((res_x,res_y)).T
+    #res_x = numpy.hstack((bsArr[0][0],numpy.array([bsmm[:,0],bsmp[:,0],bspm[:,0],bspp[:,0]]).T.ravel(),bsArr[-1][0]))
+    #res_y = numpy.hstack((bsArr[0][1],numpy.array([bsmm[:,1],bsmp[:,1],bspm[:,1],bspp[:,1]]).T.ravel(),bsArr[-1][1]))
+    #return numpy.vstack((res_x,res_y)).T
+    res = numpy.vstack((bsArr[0],numpy.hstack((bsmm,bsmp,bspm,bspp)).reshape(-1,2),bsArr[-1]))
+    return res
 
 def genMaskedMkid(mkidArr,bsInterp):
     return mkidArr[numpy.abs((bsInterp(mkidArr[:,0])-0.5))>=0.4]
