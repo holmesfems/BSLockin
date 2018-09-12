@@ -60,18 +60,14 @@ def genMaskedBS(bsArr):
     bsfreq = Param['BSFreq']
     quant = 1.0/Param['DAQFreq']
     mrdt = maskrate/bsfreq
-    bsm = numpy.array([bsArr[x] for x in range(1,len(bsArr)-1) if bsArr[x][1] != bsArr[x+1][1]])
-    bsp = numpy.array([bsArr[x] for x in range(1,len(bsArr)-1) if bsArr[x][1] == bsArr[x+1][1]])
+    bsm = bsArr[1:-1][numpy.diff(bsArr[1:,1])!=0]
+    bsp = bsArr[1:-1][numpy.diff(bsArr[1:,1])==0]
     bsmm = bsm + [-mrdt-0.5*quant,0]
     bsmp = (bsm + [-mrdt+0.5*quant,0])*[1,0]+[0,0.5]
     bspm = (bsp + [+mrdt-0.5*quant,0])*[1,0]+[0,0.5]
     bspp = bsp + [+mrdt+0.5*quant,0]
-    res_x = numpy.array(bsArr[0][0])
-    res_x = numpy.append(res_x,[[bsmm[x][0],bsmp[x][0],bspm[x][0],bspp[x][0]] for x in range(0,len(bsmm))])
-    res_x = numpy.append(res_x,bsArr[-1][0])
-    res_y = numpy.array(bsArr[0][1])
-    res_y = numpy.append(res_y,[[bsmm[x][1],bsmp[x][1],bspm[x][1],bspp[x][1]] for x in range(0,len(bsmm))])
-    res_y = numpy.append(res_y,bsArr[-1][1])
+    res_x = numpy.hstack((bsArr[0][0],numpy.array([bsmm[:,0],bsmp[:,0],bspm[:,0],bspp[:,0]]).T.ravel(),bsArr[-1][0]))
+    res_y = numpy.hstack((bsArr[0][1],numpy.array([bsmm[:,1],bsmp[:,1],bspm[:,1],bspp[:,1]]).T.ravel(),bsArr[-1][1]))
     return numpy.vstack((res_x,res_y)).T
 
 def genMaskedMkid(mkidArr,bsInterp):
