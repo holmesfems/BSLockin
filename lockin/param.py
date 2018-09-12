@@ -21,5 +21,6 @@ Param = {
 
 'force' : True,
 'use_shift' : True,
-'use_costumSE' : True
+'use_costumSE' : True,
+'shift_withMask' : True
 }

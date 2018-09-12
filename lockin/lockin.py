@@ -36,7 +36,7 @@ def linear_fmin(func,start,end,step):
                 xmin = points[i]
             prog = math.floor(i/div)
             if prog > nowProg:
-                nowProg = prog;
+                nowProg = prog
                 pb.update(i)
     print("Result = ", xmin)
     return xmin
@@ -55,10 +55,27 @@ def findSE(arr2d,freq,timeSpanRate):
             break
     return (start,end)
 
-def isInMask(point, bsArr, bsfreq, maskrate):
-    if (numpy.abs(bsArr - point) < (maskrate / bsfreq)).any():
-        return True
-    return False
+def genMaskedBS(bsArr):
+    maskrate = Param['MaskRate']
+    bsfreq = Param['BSFreq']
+    quant = 1.0/Param['DAQFreq']
+    mrdt = maskrate/bsfreq
+    bsm = numpy.array([bsArr[x] for x in range(1,len(bsArr)-1) if bsArr[x][1] != bsArr[x+1][1]])
+    bsp = numpy.array([bsArr[x] for x in range(1,len(bsArr)-1) if bsArr[x][1] == bsArr[x+1][1]])
+    bsmm = bsm + [-mrdt-0.5*quant,0]
+    bsmp = (bsm + [-mrdt+0.5*quant,0])*[1,0]+[0,0.5]
+    bspm = (bsp + [+mrdt-0.5*quant,0])*[1,0]+[0,0.5]
+    bspp = bsp + [+mrdt+0.5*quant,0]
+    res_x = numpy.array(bsArr[0][0])
+    res_x = numpy.append(res_x,[[bsmm[x][0],bsmp[x][0],bspm[x][0],bspp[x][0]] for x in range(0,len(bsmm))])
+    res_x = numpy.append(res_x,bsArr[-1][0])
+    res_y = numpy.array(bsArr[0][1])
+    res_y = numpy.append(res_y,[[bsmm[x][1],bsmp[x][1],bspm[x][1],bspp[x][1]] for x in range(0,len(bsmm))])
+    res_y = numpy.append(res_y,bsArr[-1][1])
+    return numpy.vstack((res_x,res_y)).T
+
+def genMaskedMkid(mkidArr,bsInterp):
+    return mkidArr[numpy.abs((bsInterp(mkidArr[:,0])-0.5))>=0.4]
 
 def lockinBS(bsFile, oppsFile):
     global bs_start
@@ -131,10 +148,9 @@ def lockinBS(bsFile, oppsFile):
     lockin_start,lockin_end = findSE(bsArr_new, Param['BSFreq'], Param['LSE_TimeSpanRate'])
     lockin_start = math.ceil(lockin_start / Param['lockin_dt']) * Param['lockin_dt']
     lockin_end = math.floor(lockin_end / Param['lockin_dt']) * Param['lockin_dt']
-    
-    return (bsArr_new,scipy.interpolate.interp1d(bsArr_new[:,0],bsArr_new[:,1]))
+    return bsArr_new
 
-def lockin(bsArr,interp_BS, mkidFile, shiftTime = None):
+def lockin(bsArr,interp_BS, mkidFile, shiftTime = None, bsArr_masked = None, interp_BS_masked = None):
     mkidArr = []
     mkidShift = 0.0
     print("Lockin File:",mkidFile,flush = True)
@@ -175,8 +191,8 @@ def lockin(bsArr,interp_BS, mkidFile, shiftTime = None):
         else:
             _mkidShiftErr = Param['mkidShiftErr']
             _mkidDefaultShift = Param['mkidDefaultShift']
-        bs_start2 = 0.0
-        bs_end2 = 0.0
+        #bs_start2 = 0.0
+        #bs_end2 = 0.0
         shiftstart = 0.0
         shiftend = 0.0
         if Param['use_costumSE']:
@@ -194,7 +210,7 @@ def lockin(bsArr,interp_BS, mkidFile, shiftTime = None):
     
         xpoints_BS = numpy.arange(bs_start2,bs_end2,Param['mkidShiftStep'])
         corr1 = interp_mkid_mean0(xpoints_mkid)
-        corr2 = -interp_BS(xpoints_BS)+0.5
+        corr2 = -interp_BS_masked(xpoints_BS)+0.5 if Param['shift_withMask'] else -interp_BS(xpoints_BS)+0.5
 
         print("Begin correlating, points_mkid = {0:d}, points_bs = {1:d}".format(len(xpoints_mkid),len(xpoints_BS)),flush = True)
 
@@ -228,8 +244,9 @@ def lockin(bsArr,interp_BS, mkidFile, shiftTime = None):
         sum_OFF = 0.0
         num_OFF = 0.0
         lockin_Arr = []
-        mkidFiltered = [x for x in mkidArr if x[0] >= lockin_start2]
-        mkidOutofMask = [x for x in mkidFiltered if not isInMask(x[0],bsArr[:,0],Param['BSFreq'], Param['MaskRate'])]
+
+        mkidFiltered = mkidArr[mkidArr[:,0]>lockin_start2]
+        mkidOutofMask = genMaskedMkid(mkidFiltered,interp_BS_masked)
         print("Begin lockin:",flush=True)
         with progbar.progbar(max_iter2) as pb:
             for point in mkidOutofMask:
@@ -287,7 +304,13 @@ if not len(FilteredParam) < 4:
     mkid_file_count = len(FilteredParam[3:])
     if mkid_file_count <= Param['mkidForceCount']:
         Param['force'] = True
-    bsArr,interp_BS = lockinBS(FilteredParam[1],FilteredParam[2])
+    bsArr = lockinBS(FilteredParam[1],FilteredParam[2])
+    bsArr_masked = genMaskedBS(bsArr)
+    with open(FilteredParam[1] + ".masked", "w") as ofs:
+        numpy.savetxt(ofs,bsArr_masked)
+        print("Masked beamswitch has been output!")
+    interp_BS = scipy.interpolate.interp1d(bsArr[:,0],bsArr[:,1])
+    interp_BS_masked = scipy.interpolate.interp1d(bsArr_masked[:,0],bsArr_masked[:,1])
     shiftlist = []
     shiftReadlist = {}
     corrNegativelist = []
@@ -304,10 +327,11 @@ if not len(FilteredParam) < 4:
         mkidNo = int(mkidNoMatch.group('No'))
         print("MKID No:",mkidNo,flush=True)
         shift,corr_isPositive = None,None
-        if Param['use_shift']:
-            shift,corr_isPositive = lockin(bsArr,interp_BS,mkid_file,shiftTime = shiftReadlist[mkidNo])
-        else:
-            shift,corr_isPositive = lockin(bsArr,interp_BS,mkid_file)
+        shift,corr_isPositive = lockin(bsArr,interp_BS,mkid_file,\
+            shiftTime = shiftReadlist[mkidNo] if Param['use_shift'] else None,\
+            bsArr_masked = bsArr_masked,\
+            interp_BS_masked = interp_BS_masked\
+            )
         #print("Shift = ",shift,flush = True)
         if not shift == None:
             shiftlist.append([float(mkidNo),shift])
