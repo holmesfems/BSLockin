@@ -66,9 +66,6 @@ def genMaskedBS(bsArr):
     bsmp = (bsm + [-mrdt+0.5*quant,0])*[1,0]+[0,0.5]
     bspm = (bsp + [+mrdt-0.5*quant,0])*[1,0]+[0,0.5]
     bspp = bsp + [+mrdt+0.5*quant,0]
-    #res_x = numpy.hstack((bsArr[0][0],numpy.array([bsmm[:,0],bsmp[:,0],bspm[:,0],bspp[:,0]]).T.ravel(),bsArr[-1][0]))
-    #res_y = numpy.hstack((bsArr[0][1],numpy.array([bsmm[:,1],bsmp[:,1],bspm[:,1],bspp[:,1]]).T.ravel(),bsArr[-1][1]))
-    #return numpy.vstack((res_x,res_y)).T
     res = numpy.vstack((bsArr[0],numpy.hstack((bsmm,bsmp,bspm,bspp)).reshape(-1,2),bsArr[-1]))
     return res
 
@@ -236,38 +233,24 @@ def lockin(bsArr,interp_BS, mkidFile, shiftTime = None, bsArr_masked = None, int
         lockin_end2 = math.floor(min(lockin_end,mkidArr[-1][0]))
         max_iter2 = math.floor((lockin_end2 - lockin_start2) / Param['lockin_dt'] + 0.5)
 
-        iter = 1
-        sum_ON = 0.0
-        num_ON = 0
-        sum_OFF = 0.0
-        num_OFF = 0.0
         lockin_Arr = []
 
         mkidFiltered = mkidArr[mkidArr[:,0]>lockin_start2]
         mkidOutofMask = genMaskedMkid(mkidFiltered,interp_BS_masked)
         print("Begin lockin:",flush=True)
         with progbar.progbar(max_iter2) as pb:
-            for point in mkidOutofMask:
-                if not point[0] < lockin_start2 + iter * Param['lockin_dt']:
-                    if num_ON > 0 and num_OFF > 0:
-                        lockin_Arr.append([lockin_start2 + (iter - 0.5) * Param['lockin_dt'], - sum_ON/num_ON + sum_OFF/num_OFF if corr_isPositive == None or corr_isPositive else sum_ON/num_ON - sum_OFF/num_OFF])
-                        sum_ON,sum_OFF = 0.0, 0.0
-                        num_ON,num_OFF = 0, 0
-                        iter = iter + 1
-                        pb.update(iter)
-                        if(iter >= max_iter2):
-                            break
-                    else:
-                        print("Illigal data has occured!")
-                        return
-                if interp_BS(point[0]) > 0.5:
-                    #ON
-                    sum_ON = sum_ON + point[1]
-                    num_ON = num_ON + 1
-                else:
-                    #OFF
-                    sum_OFF = sum_OFF + point[1]
-                    num_OFF = num_OFF + 1
+            lockinArea = numpy.arange(lockin_start2+Param['lockin_dt'],lockin_end2,Param['lockin_dt'])
+            mkidOutofMask_split = numpy.split(mkidOutofMask,numpy.bincount(numpy.digitize(mkidOutofMask[:,0],lockinArea)).cumsum()[:-1])[:-1]
+            split_ON = [x[interp_BS(x[:,0])>0.5] for x in mkidOutofMask_split]
+            pb.update(max_iter2/4)
+            split_OFF = [x[interp_BS(x[:,0])<=0.5] for x in mkidOutofMask_split]
+            pb.update(max_iter2/2)
+            sum_ON = numpy.array([numpy.sum(x[:,1]) for x in split_ON])
+            sum_OFF = numpy.array([numpy.sum(x[:,1]) for x in split_OFF])
+            count_ON = numpy.array([len(x) for x in split_ON])
+            count_OFF = numpy.array([len(x) for x in split_OFF])
+            res = sum_ON / count_ON - sum_OFF / count_OFF
+            lockin_Arr = numpy.vstack((lockinArea-0.5*Param['lockin_dt'],res)).T
         with open(mkidFile+".lockin","wb") as ofs:
             numpy.savetxt(ofs,numpy.array(lockin_Arr))
         with open(mkidFile+".outmask","wb") as ofs:
