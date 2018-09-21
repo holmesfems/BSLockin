@@ -19,40 +19,12 @@ lockin_start = 0.0
 lockin_end = 0.0
 Param = param.Param.copy()
 
-def linear_fmin(func,start,end,step):
-    min = func(start)
-    xmin = start
-    points = numpy.arange(start,end,step)
-    lenth = len(points)
-    div = lenth*1.0 / 100
-    nowProg = 0
-    print("Start seeking minimum value of function by linear sweeping..")
-    print("Start = {0:.4e}, End = {1:.4e}, Step = {2:.4e}".format(start,end,step))
-    with progbar.progbar(lenth) as pb:
-        for i in range(pb.period()):
-            val = func(points[i])
-            if min > val:
-                min = val
-                xmin = points[i]
-            prog = math.floor(i/div)
-            if prog > nowProg:
-                nowProg = prog
-                pb.update(i)
-    print("Result = ", xmin)
-    return xmin
-
 def findSE(arr2d,freq,timeSpanRate):
-    start = -1.0
-    for i in range(0,len(arr2d)):
-        if(arr2d[i][1] == arr2d[i+1][1]) and (-arr2d[i][0] + arr2d[i+1][0]) * freq < timeSpanRate:
-            start = arr2d[i][0]
-            break
-    end = -1.0
-    for i in range(0,len(arr2d)):
-        i = len(arr2d) - i - 2
-        if(arr2d[i][1] == arr2d[i+1][1]) and (-arr2d[i][0] + arr2d[i+1][0]) * freq < timeSpanRate:
-            end = arr2d[i+1][0]
-            break
+    diffX = numpy.diff(arr2d[:,0])
+    diffY = numpy.diff(arr2d[:,1])
+    seLogic = numpy.logical_and(diffY == 0,diffX*freq < timeSpanRate)
+    start = arr2d[:-1][seLogic][0][0]
+    end = arr2d[1:][seLogic][-1][0]
     return (start,end)
 
 def genMaskedBS(bsArr):
@@ -87,16 +59,14 @@ def lockinBS(bsFile, oppsFile):
     
         #Calculate calibrated DAQ Sampling Frequency
         firstPulse = -1
-        for i in range(0,len(oppsArr)):
-            if (oppsArr[i][1] == 1) and (oppsArr[i+1][1] == 1) and (( -oppsArr[i][0] + oppsArr[i+1][0]) / Param['DAQFreq'] < 0.1):
-                firstPulse = oppsArr[i][0]
-                break
         lastPulse = -1
-        for i in range(0,len(oppsArr)):
-            i = len(oppsArr) - i - 2
-            if (oppsArr[i][1] == 1) and (oppsArr[i+1][1] == 1) and (( -oppsArr[i][0] + oppsArr[i+1][0]) / Param['DAQFreq'] < 0.1):
-                lastPulse = oppsArr[i][0]
-                break
+        diffX = numpy.diff(oppsArr[:,0])
+        diffY = numpy.diff(oppsArr[:,1])
+        seLogic = numpy.logical_and(oppsArr[:-1,1]==1,diffY==0,diffX/Param['DAQFreq']<0.1)
+        flPulse = oppsArr[:-1][seLogic]
+        if len(flPulse) >= 2:
+            firstPulse = flPulse[0][0]
+            lastPulse = flPulse[-1][0]
         if firstPulse < 0 or lastPulse < 0:
             print("Failed to fit opps pulse!")
             return
@@ -258,6 +228,7 @@ def lockin(bsArr,interp_BS, mkidFile, shiftTime = None, bsArr_masked = None, int
         print("Output lockin data done!",flush=True)
     return (mkidShift,corr_isPositive)
 
+#Main process
 paramSetRe = re.compile(r"(?P<param>[^=]+)=(?P<value>[^=]+)")
 paramSetList = [x for x in sys.argv if not paramSetRe.match(x) is None]
 intRe = re.compile(r"-?\d+$")
