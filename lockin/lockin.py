@@ -32,28 +32,8 @@ def rms(arr1d):
     return rms
 
 def genSplitIndex(arr,area):
-    index = numpy.bincount(numpy.digitize(arr,area)).cumsum()[:-1]
-    return index
+    return numpy.bincount(numpy.digitize(arr,area)).cumsum()[:-1]
 
-def findMinUFunc(UFunc,points):
-    cash = {}
-    def fastUFunc(point):
-        if point in cash.keys():
-            return cash[point]
-        else:
-            res = UFunc(point)
-            cash.update({point:res})
-            return res
-    lenth = len(points)*1.0
-    left = math.floor(lenth/4.0+0.5)
-    right = math.floor(3.0*lenth/4.0+0.5)
-    center = math.floor(lenth/2.0+0.5)
-    while center != left or center != right:
-        lenth /=2
-        valueL = fastUFunc(points[left])
-        valueR = fastUFunc(points[right])
-        valueC = fastUFunc(points[center])
-        
 
 def genMaskedBS(bsArr):
     maskrate = Param['MaskRate']
