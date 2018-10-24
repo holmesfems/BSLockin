@@ -27,6 +27,14 @@ def findSE(arr2d,freq,timeSpanRate):
     end = arr2d[1:][seLogic][-1][0]
     return (start,end)
 
+def rms(arr1d):
+    rms=math.sqrt(numpy.sum(arr1d**2.0)/len(arr1d))
+    return rms
+
+def genSplitIndex(arr,area):
+    return numpy.bincount(numpy.digitize(arr,area)).cumsum()[:-1]
+
+
 def genMaskedBS(bsArr):
     maskrate = Param['MaskRate']
     bsfreq = Param['BSFreq']
@@ -210,7 +218,7 @@ def lockin(bsArr,interp_BS, mkidFile, shiftTime = None, bsArr_masked = None, int
         print("Begin lockin:",flush=True)
         with progbar.progbar(max_iter2) as pb:
             lockinArea = numpy.arange(lockin_start2+Param['lockin_dt'],lockin_end2,Param['lockin_dt'])
-            mkidOutofMask_split = numpy.split(mkidOutofMask,numpy.bincount(numpy.digitize(mkidOutofMask[:,0],lockinArea)).cumsum()[:-1])[:-1]
+            mkidOutofMask_split = numpy.split(mkidOutofMask,genSplitIndex(mkidOutofMask[:,0],lockinArea))[:-1]
             split_ON = [x[interp_BS(x[:,0])>0.5] for x in mkidOutofMask_split]
             pb.update(max_iter2/4)
             split_OFF = [x[interp_BS(x[:,0])<=0.5] for x in mkidOutofMask_split]
@@ -220,6 +228,8 @@ def lockin(bsArr,interp_BS, mkidFile, shiftTime = None, bsArr_masked = None, int
             count_ON = numpy.array([len(x) for x in split_ON])
             count_OFF = numpy.array([len(x) for x in split_OFF])
             res = sum_ON / count_ON - sum_OFF / count_OFF
+            if len(lockinArea)!=len(res):
+                lockinArea = lockinArea[:len(res)]
             lockin_Arr = numpy.vstack((lockinArea-0.5*Param['lockin_dt'],res)).T
         with open(mkidFile+".lockin","wb") as ofs:
             numpy.savetxt(ofs,numpy.array(lockin_Arr))
