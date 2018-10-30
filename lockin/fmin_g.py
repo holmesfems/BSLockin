@@ -19,17 +19,19 @@ def fmin_g(func,start,end,acc,L=None,R=None,ML=None,MR=None):
         R = func(end)
     if ML is None:
         ML = func(xML)
-    if L<=ML and R <=ML:
-        if L<=ML:
-            return (start,start,end)
-        else:
-            return (end,start,end)
     if MR is None:
         MR = func(xMR)
-    if MR > ML:
+    def fmin_L():
         return fmin_g(func,start,xMR,acc,L=L,R=MR,MR=ML)
-    else:
+    def fmin_R():
         return fmin_g(func,xML,end,acc,L=ML,R=R,ML=MR)
+    if L<=ML and R <=ML:
+        xM = 0.5*start+0.5*end
+        return (xM,start,end)
+    if MR > ML:
+        return fmin_L()
+    else:
+        return fmin_R()
 
 if __name__ == '__main__':
-    print(fmin_g(lambda x:x*x,-1,0.5,0.0001))
+    print(fmin_g(lambda x:1/(x+1.1)+x,-1,0.5,0.01))
