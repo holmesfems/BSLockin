@@ -12,6 +12,7 @@ import math
 import progbar
 import time
 import param
+import fmin_g
 #Shared Memories
 bs_start = 0.0
 bs_end = 0.0
@@ -28,12 +29,12 @@ def findSE(arr2d,freq,timeSpanRate):
     return (start,end)
 
 def rms(arr1d):
-    rms=math.sqrt(numpy.sum(arr1d**2.0)/len(arr1d))
+    mean=numpy.mean(arr1d)
+    rms=math.sqrt(numpy.sum((arr1d-mean)**2.0)/len(arr1d))
     return rms
 
 def genSplitIndex(arr,area):
     return numpy.bincount(numpy.digitize(arr,area)).cumsum()[:-1]
-
 
 def genMaskedBS(bsArr):
     maskrate = Param['MaskRate']
@@ -145,7 +146,6 @@ def lockin(bsArr,interp_BS, mkidFile, shiftTime = None, bsArr_masked = None, int
         print("Use detected shift time:",shiftTime,flush = True)
         mkidShift = shiftTime
 
-    
     if doCalib:
         mkidArr = numpy.loadtxt(mkidFile)[:,0:3:2] / [Param['FSPFreq'],1]
         #Get calibrated mkid shift
@@ -204,15 +204,13 @@ def lockin(bsArr,interp_BS, mkidFile, shiftTime = None, bsArr_masked = None, int
         Param['force'] = True
     print("Mkid shift = ",mkidShift,flush = True)
     #Lock in
+    lockin_Arr = []
     if not Param['force'] and os.path.exists(mkidFile+".lockin"):
         print("Lockin file detected, skip",flush = True)
     else:
         lockin_start2 = math.ceil(max(lockin_start,mkidArr[0][0]))
         lockin_end2 = math.floor(min(lockin_end,mkidArr[-1][0]))
         max_iter2 = math.floor((lockin_end2 - lockin_start2) / Param['lockin_dt'] + 0.5)
-
-        lockin_Arr = []
-
         mkidFiltered = mkidArr[mkidArr[:,0]>lockin_start2]
         mkidOutofMask = genMaskedMkid(mkidFiltered,interp_BS_masked)
         print("Begin lockin:",flush=True)
@@ -236,7 +234,7 @@ def lockin(bsArr,interp_BS, mkidFile, shiftTime = None, bsArr_masked = None, int
         with open(mkidFile+".outmask","wb") as ofs:
             numpy.savetxt(ofs,numpy.array(mkidOutofMask))
         print("Output lockin data done!",flush=True)
-    return (mkidShift,corr_isPositive)
+    return (mkidShift,corr_isPositive,lockin_Arr)
 
 #Main process
 paramSetRe = re.compile(r"(?P<param>[^=]+)=(?P<value>[^=]+)")
@@ -289,7 +287,26 @@ if not len(FilteredParam) < 4:
         mkidNo = int(mkidNoMatch.group('No'))
         print("MKID No:",mkidNo,flush=True)
         shift,corr_isPositive = None,None
-        shift,corr_isPositive = lockin(bsArr,interp_BS,mkid_file,\
+        if Param['fit_mr']:
+            def rms_mask(MR):
+                global shift,corr_isPositive
+                Param['MaskRate'] = MR
+                shift,corr_isPositive,lockin_Arr = lockin(bsArr,interp_BS,mkid_file,\
+                    shiftTime = shiftReadlist[mkidNo] if Param['use_shift'] else None,\
+                    bsArr_masked = bsArr_masked,\
+                    interp_BS_masked = interp_BS_masked\
+                    )
+                rms_s = math.ceil(len(lockin_Arr)*Param['rms_s'])
+                rms_e = math.floor((len(lockin_Arr)*Param['rms_e']))
+                rms_val = rms(lockin_Arr[rms_s:rms_e])
+                return rms_val
+            mr,st,ed = fmin_g.fmin_g(rms_mask,Param['mr_s'],Param['mr_e'],Param['mr_a'])
+            Param['MaskRate'] = mr
+            print("Masking Rate fitting result:{0}".format(mr))
+            print("st={0} ed={1} ac={2}".format(st,ed,ed-st))
+            if ed-st > Param['mr_a']:
+                print("Warning: ac is larger than expected")
+        shift,corr_isPositive,lockin_Arr = lockin(bsArr,interp_BS,mkid_file,\
             shiftTime = shiftReadlist[mkidNo] if Param['use_shift'] else None,\
             bsArr_masked = bsArr_masked,\
             interp_BS_masked = interp_BS_masked\

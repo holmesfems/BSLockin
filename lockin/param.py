@@ -22,5 +22,12 @@ Param = {
 'force' : True,
 'use_shift' : True,
 'use_costumSE' : True,
-'shift_withMask' : True
+'shift_withMask' : True,
+
+'fit_mr' : True,
+'mr_s' : 0.02,
+'mr_e' : 0.03,
+'mr_a' : 0.001,
+'rms_s' : 1.0*(55-3.6)/(1221-3.6),
+'rms_e' : 1.0*(82 - 3.6)/(1221-3.6),
 }
