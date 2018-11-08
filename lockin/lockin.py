@@ -265,15 +265,11 @@ if not len(FilteredParam) < 4:
     if mkid_file_count <= Param['mkidForceCount']:
         Param['force'] = True
     bsArr = lockinBS(FilteredParam[1],FilteredParam[2])
-    bsArr_masked = genMaskedBS(bsArr)
-    with open(FilteredParam[1] + ".masked", "w") as ofs:
-        numpy.savetxt(ofs,bsArr_masked)
-        print("Masked beamswitch has been output!")
     interp_BS = scipy.interpolate.interp1d(bsArr[:,0],bsArr[:,1])
-    interp_BS_masked = scipy.interpolate.interp1d(bsArr_masked[:,0],bsArr_masked[:,1])
     shiftlist = []
     shiftReadlist = {}
     corrNegativelist = []
+    mrList = []
     startTime = time.time()
     if Param['use_shift']:
         if(os.path.exists("shiftlist.txt")):
@@ -291,13 +287,15 @@ if not len(FilteredParam) < 4:
             def rms_mask(MR):
                 global shift,corr_isPositive
                 Param['MaskRate'] = MR
+                bsArr_masked = genMaskedBS(bsArr)
+                interp_BS_masked = scipy.interpolate.interp1d(bsArr_masked[:,0],bsArr_masked[:,1])
                 shift,corr_isPositive,lockin_Arr = lockin(bsArr,interp_BS,mkid_file,\
                     shiftTime = shiftReadlist[mkidNo] if Param['use_shift'] else None,\
                     bsArr_masked = bsArr_masked,\
                     interp_BS_masked = interp_BS_masked\
                     )
                 rms_s = math.ceil(len(lockin_Arr)*Param['rms_s'])
-                rms_e = math.floor((len(lockin_Arr)*Param['rms_e']))
+                rms_e = math.floor(len(lockin_Arr)*Param['rms_e'])
                 rms_val = rms(lockin_Arr[rms_s:rms_e])
                 return rms_val
             mr,st,ed = fmin_g.fmin_g(rms_mask,Param['mr_s'],Param['mr_e'],Param['mr_a'])
@@ -306,6 +304,9 @@ if not len(FilteredParam) < 4:
             print("st={0} ed={1} ac={2}".format(st,ed,ed-st))
             if ed-st > Param['mr_a']:
                 print("Warning: ac is larger than expected")
+            mrList.append([float(mkidNo),mr,ed-st])
+        bsArr_masked = genMaskedBS(bsArr)
+        interp_BS_masked = scipy.interpolate.interp1d(bsArr_masked[:,0],bsArr_masked[:,1])
         shift,corr_isPositive,lockin_Arr = lockin(bsArr,interp_BS,mkid_file,\
             shiftTime = shiftReadlist[mkidNo] if Param['use_shift'] else None,\
             bsArr_masked = bsArr_masked,\
@@ -316,10 +317,14 @@ if not len(FilteredParam) < 4:
             shiftlist.append([float(mkidNo),shift])
         if not corr_isPositive:
             corrNegativelist.append(mkidNo)
+    mrList = numpy.array(mrList)
     shiftArr = numpy.array(shiftlist)
     #shiftArr.sort(0)
     shiftlistName = "shiftlist2.txt" if Param['use_shift'] else "shiftlist.txt"
     if not mkid_file_count <= Param['mkidForceCount']:
+        if len(mrList) > 0:
+            with open("mrlist.txt","wb") as ofs:
+                numpy.savetxt(ofs,mrList[mrList[:,0].argsort()])
         if len(shiftArr) > 0:
             with open(shiftlistName,"wb") as ofs:
                 numpy.savetxt(ofs,shiftArr[shiftArr[:,0].argsort(),:])

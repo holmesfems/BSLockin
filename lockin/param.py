@@ -10,8 +10,8 @@ Param = {
 'mkidBaseShift' : -0.02,
 'mkidShiftErr' : 4.0,
 'mkidShiftErr_useShift' : 0.05,
-'mkidShift_costumS' : 1.0*(55-3.6)/(1221-3.6),
-'mkidShift_costumE' : 1.0*(82 - 3.6)/(1221-3.6),
+'mkidShift_costumS' : 1.0*(64-3.6)/(1221-3.6),
+'mkidShift_costumE' : 1.0*(72 - 3.6)/(1221-3.6),
 'mkidShiftStep' : 0.001,
 #'mkidShiftStep_useShift' : 0.0005,
 #'ConvolStep' : 0.02,
@@ -26,8 +26,8 @@ Param = {
 
 'fit_mr' : True,
 'mr_s' : 0.02,
-'mr_e' : 0.03,
+'mr_e' : 0.05,
 'mr_a' : 0.001,
-'rms_s' : 1.0*(55-3.6)/(1221-3.6),
-'rms_e' : 1.0*(82 - 3.6)/(1221-3.6),
+'rms_s' : 1.0*(90-3.6)/(1221-3.6),
+'rms_e' : 1.0*(130 - 3.6)/(1221-3.6),
 }
